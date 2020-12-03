@@ -124,9 +124,32 @@ function! ZFBackup_backupDir()
         else
             let s:backupDir = cacheDir
         endif
-        let s:backupDir = s:absPath(s:backupDir)
+        let s:backupDir = ZFBackup_absPath(s:backupDir)
     endif
     return s:backupDir
+endfunction
+
+function! ZFBackup_isInBackupDir(path)
+    return (stridx(ZFBackup_absPath(a:path), ZFBackup_absPath(ZFBackup_backupDir())) == 0)
+endfunction
+
+function! ZFBackup_absPath(path)
+    if !exists('s:isCygwin')
+        let s:isCygwin = has('win32unix') && executable('cygpath')
+    endif
+
+    " when shellslash is on,
+    " fnamemodify seems unable to convert path separator correctly
+    " with simple `:p`
+    let path = fnamemodify(fnamemodify(a:path, ':.'), ':p')
+    if s:isCygwin
+        let path = substitute(system('cygpath -m "' . path . '"'), '[\r\n]', '', 'g')
+    endif
+    let path = substitute(path, '\\', '/', 'g')
+    while len(path) > 1 && path[len(path) - 1] == '/'
+        let path = strpart(path, 0, len(path) - 1)
+    endwhile
+    return path
 endfunction
 
 " param1: filePath
@@ -161,16 +184,6 @@ function! ZFBackupRemoveDir(...)
     call s:backupRemoveDir(get(a:, 1, ''))
 endfunction
 command! -nargs=* -complete=file ZFBackupRemoveDir :call ZFBackupRemoveDir(<q-args>)
-
-function! ZFBackupList(...)
-    call s:backupList(get(a:, 1, ''))
-endfunction
-command! -nargs=* -complete=file ZFBackupList :call ZFBackupList(<q-args>)
-
-function! ZFBackupListDir(...)
-    call s:backupListDir(get(a:, 1, ''))
-endfunction
-command! -nargs=* -complete=dir ZFBackupListDir :call ZFBackupListDir(<q-args>)
 
 " return: [
 "   {
@@ -223,7 +236,7 @@ function! s:ZFBackup_autoClean_sortFunc(backupInfo1, backupInfo2)
 endfunction
 function! ZFBackup_autoClean()
     let backupDir = ZFBackup_backupDir()
-    let backupInfoList = s:getAllBackupInfoList()
+    let backupInfoList = ZFBackup_getAllBackupInfoList()
 
     let interval = get(g:, 'ZFBackup_autoClean', 7 * 24 * 60 * 60)
     if interval > 0
@@ -251,27 +264,6 @@ augroup ZFBackup_autoClean_augroup
 augroup END
 
 " ============================================================
-
-function! s:absPath(path)
-    if !exists('s:isCygwin')
-        let s:isCygwin = has('win32unix') && executable('cygpath')
-    endif
-
-    " when shellslash is on,
-    " fnamemodify seems unable to convert path separator correctly
-    " with simple `:p`
-    let path = fnamemodify(fnamemodify(a:path, ':.'), ':p')
-    if s:isCygwin
-        let path = substitute(system('cygpath -m "' . path . '"'), '[\r\n]', '', 'g')
-    endif
-    let path = substitute(path, '\\', '/', 'g')
-    return path
-endfunction
-
-function! s:isInBackupDir(path)
-    return (stridx(s:absPath(a:path), s:absPath(ZFBackup_backupDir())) == 0)
-endfunction
-
 function! s:pathEncode(file)
     let ret = a:file
     let ret = substitute(ret, ';', ';ES;', 'g')
@@ -305,7 +297,7 @@ function! s:backupInfoEncode(origPath)
     let backupFile = s:pathEncode(fnamemodify(a:origPath, ':t'))
                 \ . '~' . strftime('%Y-%m-%d~%H-%M-%S')
                 \ . '~' . s:pathEncode(hash)
-                \ . '~' . s:pathEncode(s:absPath(a:origPath))
+                \ . '~' . s:pathEncode(ZFBackup_absPath(a:origPath))
     return {
                 \   'backupFile' : backupFile,
                 \   'hash' : hash,
@@ -315,7 +307,7 @@ function! s:backupInfoDecode(backupFile)
     let backupFile = fnamemodify(a:backupFile, ':t')
     let items = split(backupFile, '\~')
     if len(items) == 5
-        let time = items[1] . substitute(items[2], '-', ':', 'g')
+        let time = items[1] . ' ' . substitute(items[2], '-', ':', 'g')
         let hash = s:pathDecode(items[3])
         let origPath = s:pathDecode(items[4])
         return {
@@ -357,19 +349,19 @@ function! s:backupSave(filePath, options)
         return
     endif
     let maxFileSize = get(options, 'maxFileSize', get(g:, 'ZFBackup_maxFileSize', 2 * 1024 * 1024))
-    if s:isInBackupDir(filePath)
+    if ZFBackup_isInBackupDir(filePath)
                 \ || !filereadable(filePath)
                 \ || (maxFileSize > 0 && getfsize(filePath) >= maxFileSize)
         return
     endif
 
-    let origPath = s:absPath(filePath)
+    let origPath = ZFBackup_absPath(filePath)
     let backupDir = ZFBackup_backupDir()
 
     " ignore file created by tempname()
     if !get(options, 'includeTempname', get(g:, 'ZFBackup_includeTempname', 0))
         if !exists('s:tempDir')
-            let s:tempDir = s:absPath(fnamemodify(tempname(), ':p:h'))
+            let s:tempDir = ZFBackup_absPath(fnamemodify(tempname(), ':p:h'))
         endif
         if stridx(origPath, s:tempDir) == 0
             return
@@ -398,7 +390,7 @@ function! s:backupSave(filePath, options)
     endif
     let Fn_backupFunc = function(g:ZFBackup_backupFunc)
 
-    let backupInfoListOld = s:getBackupInfoList(origPath)
+    let backupInfoListOld = ZFBackup_getBackupInfoList(origPath)
     if !empty(backupInfoListOld)
         for i in range(len(backupInfoListOld))
             if backupInfoListOld[i]['hash'] == backupInfoNew['hash']
@@ -432,7 +424,7 @@ function! s:backupRemove(filePath)
     if empty(filePath)
         let filePath = expand('%')
     endif
-    let backupInfoList = s:getBackupInfoList(filePath)
+    let backupInfoList = ZFBackup_getBackupInfoList(filePath)
     if empty(backupInfoList)
         echo '[ZFBackup] no backup found'
         return
@@ -442,7 +434,7 @@ function! s:backupRemove(filePath)
     call inputsave()
     let input = input(join([
                 \   '[ZFBackup] remove all backups for file?',
-                \   '    file: ' . s:absPath(filePath),
+                \   '    file: ' . ZFBackup_absPath(filePath),
                 \   '',
                 \   'enter `got it` to remove: ',
                 \ ], "\n"))
@@ -465,7 +457,7 @@ function! s:backupRemoveDir(dirPath)
     if empty(dirPath)
         let dirPath = getcwd()
     endif
-    let absPath = s:absPath(dirPath)
+    let absPath = ZFBackup_absPath(dirPath)
 
     redraw!
     call inputsave()
@@ -483,163 +475,11 @@ function! s:backupRemoveDir(dirPath)
     endif
 
     let backupDir = ZFBackup_backupDir()
-    for backupInfo in s:getAllBackupInfoList()
+    for backupInfo in ZFBackup_getAllBackupInfoList()
         if stridx(backupInfo['origPath'], absPath) == 0
             silent! call delete(backupDir . '/' . backupInfo['backupFile'])
         endif
     endfor
-endfunction
-
-function! s:backupList(filePath)
-    let filePath = a:filePath
-    if empty(filePath)
-        let filePath = expand('%')
-    endif
-    if empty(filePath)
-        call ZFBackupListDir(getcwd())
-        return
-    endif
-    let backupInfoList = s:getBackupInfoList(filePath)
-    if empty(backupInfoList)
-        echo '[ZFBackup] no backup found'
-        return
-    endif
-    if len(backupInfoList) == 1
-        let choice = 0
-    else
-        let inputlist = ['[ZFBackup] select backup file to diff:']
-        call add(inputlist, '')
-        for i in range(len(backupInfoList))
-            call add(inputlist, '    [' . (i+1) . ']: ' . backupInfoList[i]['info'])
-        endfor
-        call add(inputlist, '')
-        call inputsave()
-        let choice = inputlist(inputlist) - 1
-        call inputrestore()
-        if choice < 0 || choice >= len(backupInfoList)
-            redraw!
-            echo '[ZFBackup] canceled'
-            return
-        endif
-    endif
-
-    execute 'tabedit ' . substitute(ZFBackup_backupDir() . '/' . backupInfoList[choice]['backupFile'], ' ', '\\ ', 'g')
-    diffthis
-    call s:diffBufferKeymapSetup()
-    execute 'file ' . backupInfoList[choice]['info']
-    setlocal buftype=nofile bufhidden=wipe noswapfile nomodifiable
-
-    vsplit
-    wincmd l
-    let existBuf = bufnr(substitute(filePath, '\\', '/', 'g'))
-    if existBuf != -1
-        execute ':b' . existBuf
-    else
-        execute 'edit ' . substitute(filePath, ' ', '\\ ', 'g')
-    endif
-    diffthis
-    call s:diffBufferKeymapSetup()
-
-    execute "normal! \<c-w>l]czz"
-    redraw!
-    echo '[ZFBackup] ' . backupInfoList[choice]['info']
-endfunction
-
-augroup ZFBackup_diffBuffer_augroup
-    autocmd!
-    autocmd User ZFBackupDiffBufferSetup silent
-    autocmd User ZFBackupDiffBufferCleanup silent
-augroup END
-function! s:diffBufferKeymapSetup()
-    for k in get(g:, 'ZFBackup_diffBufferKeymap_quit', ['q'])
-        execute 'nnoremap <silent><buffer> ' . k . ' :call ZFBackup_diffBufferKeymap_quit()<cr>'
-    endfor
-    doautocmd User ZFBackupDiffBufferSetup
-endfunction
-function! ZFBackup_diffBufferKeymap_quit()
-    if s:isInBackupDir(expand('%'))
-        wincmd l
-    endif
-    silent! diffoff
-    for k in get(g:, 'ZFBackup_diffBufferKeymap_quit', ['q'])
-        execute 'silent! unmap <buffer> ' . k
-    endfor
-    doautocmd User ZFBackupDiffBufferCleanup
-    wincmd h
-    doautocmd User ZFBackupDiffBufferCleanup
-    silent! bdelete!
-    tabclose
-endfunction
-
-function! s:backupListDir(dirPath)
-    let dirPath = a:dirPath
-    if empty(dirPath)
-        let dirPath = getcwd()
-    endif
-    let absPath = s:absPath(dirPath)
-    let backupsInDir = {}
-    for backupInfo in s:getAllBackupInfoList()
-        if stridx(backupInfo['origPath'], absPath) == 0
-            let backupsInDir[backupInfo['origPath']] = backupInfo
-        endif
-    endfor
-    if empty(backupsInDir)
-        echo '[ZFBackup] no backup found'
-        return
-    endif
-    if len(backupsInDir) == 1
-        call ZFBackupList(values(backupsInDir)[0]['origPath'])
-        return
-    endif
-
-    tabnew
-    file ZFBackupListDir
-    setlocal buftype=nofile bufhidden=wipe noswapfile
-    let contents = [
-                \   '# o or <cr> to list backup for file',
-                \   '# q or :bd to quit',
-                \   '',
-                \ ]
-    let b:ZFBackup_filesToList = []
-    let b:ZFBackup_offset = len(contents) + 1
-    for backupInfo in values(backupsInDir)
-        call add(contents, fnamemodify(backupInfo['origPath'], ':t') . '    => ' . backupInfo['origPath'])
-        call add(b:ZFBackup_filesToList, backupInfo['origPath'])
-    endfor
-    call add(contents, '')
-    call setline(1, contents)
-    setlocal nomodifiable nomodified
-    let cursorPos = getpos('.')
-    let cursorPos[1] = b:ZFBackup_offset
-    call setpos('.', cursorPos)
-
-    for k in get(g:, 'ZFBackup_listBufferKeymap_open', ['o', '<cr>'])
-        execute 'nnoremap <silent><buffer> ' . k . ' :call ZFBackup_listBufferKeymap_open()<cr>'
-    endfor
-    for k in get(g:, 'ZFBackup_listBufferKeymap_quit', ['q'])
-        execute 'nnoremap <silent><buffer> ' . k . ' :call ZFBackup_listBufferKeymap_quit()<cr>'
-    endfor
-    doautocmd User ZFBackupListBufferSetup
-endfunction
-augroup ZFBackup_listBuffer_augroup
-    autocmd!
-    autocmd User ZFBackupListBufferSetup silent
-    autocmd User ZFBackupListBufferCleanup silent
-augroup END
-
-function! ZFBackup_listBufferKeymap_open()
-    if !exists('b:ZFBackup_filesToList') || !exists('b:ZFBackup_offset')
-        return
-    endif
-    let index = getpos('.')[1] - b:ZFBackup_offset
-    if index < 0 || index >= len(b:ZFBackup_filesToList)
-        return
-    endif
-    call ZFBackupList(b:ZFBackup_filesToList[index])
-endfunction
-function! ZFBackup_listBufferKeymap_quit()
-    doautocmd User ZFBackupListBufferCleanup
-    bdelete!
 endfunction
 
 function! s:getBackupInfoList_sortFunc(backupInfo1, backupInfo2)
@@ -656,7 +496,7 @@ function! s:getBackupInfoList(filePath)
     if empty(filePath)
         let filePath = expand('%')
     endif
-    if s:isInBackupDir(filePath)
+    if ZFBackup_isInBackupDir(filePath)
         return []
     endif
     let name = fnamemodify(filePath, ':t')
@@ -664,7 +504,7 @@ function! s:getBackupInfoList(filePath)
         return []
     endif
 
-    let absPath = s:absPath(filePath)
+    let absPath = ZFBackup_absPath(filePath)
     let ret = []
     for backupFile in s:getAllBackupFilePath(name)
         let backupInfo = s:backupInfoDecode(backupFile)
