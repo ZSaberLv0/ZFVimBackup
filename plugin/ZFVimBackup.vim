@@ -85,7 +85,7 @@ if get(g:, 'ZFBackup_backupFilterEnableDefault', 1)
         let ignoreData = ZFIgnoreGet(get(g:, 'ZFIgnoreOption_ZFBackup', {
                     \   'ZFBackup' : 1,
                     \ }))
-        let items = split(substitute(fnamemodify(a:filePath, ':p'), '\\\+', '/', 'g'), '/')
+        let items = split(CygpathFix_absPath(a:filePath, ':p'), '/')
         let fileName = items[-1]
         for p in ignoreData['file']
             let pattern = ZFIgnorePatternToRegexp(p)
@@ -364,7 +364,7 @@ function! s:backupSave(filePath, options)
     " ignore file created by tempname()
     if !get(options, 'includeTempname', get(g:, 'ZFBackup_includeTempname', 0))
         if !exists('s:tempDir')
-            let s:tempDir = CygpathFix_absPath(fnamemodify(tempname(), ':p:h'))
+            let s:tempDir = CygpathFix_absPath(fnamemodify(tempname(), ':h'))
         endif
         if stridx(origPath, s:tempDir) == 0
             return
