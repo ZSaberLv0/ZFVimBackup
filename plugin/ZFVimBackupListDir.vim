@@ -6,7 +6,7 @@ function! ZFBackupListDir(...)
     if empty(dirPath)
         let dirPath = getcwd()
     endif
-    let absPath = ZFBackup_absPath(dirPath)
+    let absPath = CygpathFix_absPath(dirPath)
     let backupsInDir = {}
     for backupInfo in ZFBackup_getAllBackupInfoList()
         if stridx(backupInfo['origPath'], absPath) == 0

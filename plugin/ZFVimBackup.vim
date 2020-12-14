@@ -124,32 +124,35 @@ function! ZFBackup_backupDir()
         else
             let s:backupDir = cacheDir
         endif
-        let s:backupDir = ZFBackup_absPath(s:backupDir)
+        let s:backupDir = CygpathFix_absPath(s:backupDir)
     endif
     return s:backupDir
 endfunction
 
 function! ZFBackup_isInBackupDir(path)
-    return (stridx(ZFBackup_absPath(a:path), ZFBackup_absPath(ZFBackup_backupDir())) == 0)
+    return (stridx(CygpathFix_absPath(a:path), CygpathFix_absPath(ZFBackup_backupDir())) == 0)
 endfunction
 
-function! ZFBackup_absPath(path)
-    if !exists('s:isCygwin')
-        let s:isCygwin = has('win32unix') && executable('cygpath')
+function! CygpathFix_absPath(path)
+    if !exists('g:CygpathFix_isCygwin')
+        let g:CygpathFix_isCygwin = has('win32unix') && executable('cygpath')
     endif
-
-    " when shellslash is on,
-    " fnamemodify seems unable to convert path separator correctly
-    " with simple `:p`
-    let path = fnamemodify(fnamemodify(a:path, ':.'), ':p')
-    if s:isCygwin
-        let path = substitute(system('cygpath -m "' . path . '"'), '[\r\n]', '', 'g')
+    let path = fnamemodify(a:path, ':p')
+    if g:CygpathFix_isCygwin
+        if 0 " cygpath is really slow
+            let path = substitute(system('cygpath -m "' . path . '"'), '[\r\n]', '', 'g')
+        else
+            if match(path, '^/cygdrive/') >= 0
+                let path = toupper(strpart(path, len('/cygdrive/'), 1)) . ':' . strpart(path, len('/cygdrive/') + 1)
+            else
+                if !exists('g:CygpathFix_cygwinPrefix')
+                    let g:CygpathFix_cygwinPrefix = substitute(system('cygpath -m /'), '[\r\n]', '', 'g')
+                endif
+                let path = g:CygpathFix_cygwinPrefix . path
+            endif
+        endif
     endif
-    let path = substitute(path, '\\', '/', 'g')
-    while len(path) > 1 && path[len(path) - 1] == '/'
-        let path = strpart(path, 0, len(path) - 1)
-    endwhile
-    return path
+    return substitute(path, '\\', '/', 'g')
 endfunction
 
 " param1: filePath
@@ -297,7 +300,7 @@ function! s:backupInfoEncode(origPath)
     let backupFile = s:pathEncode(fnamemodify(a:origPath, ':t'))
                 \ . '~' . strftime('%Y-%m-%d~%H-%M-%S')
                 \ . '~' . s:pathEncode(hash)
-                \ . '~' . s:pathEncode(ZFBackup_absPath(a:origPath))
+                \ . '~' . s:pathEncode(CygpathFix_absPath(a:origPath))
     return {
                 \   'backupFile' : backupFile,
                 \   'hash' : hash,
@@ -355,13 +358,13 @@ function! s:backupSave(filePath, options)
         return
     endif
 
-    let origPath = ZFBackup_absPath(filePath)
+    let origPath = CygpathFix_absPath(filePath)
     let backupDir = ZFBackup_backupDir()
 
     " ignore file created by tempname()
     if !get(options, 'includeTempname', get(g:, 'ZFBackup_includeTempname', 0))
         if !exists('s:tempDir')
-            let s:tempDir = ZFBackup_absPath(fnamemodify(tempname(), ':p:h'))
+            let s:tempDir = CygpathFix_absPath(fnamemodify(tempname(), ':p:h'))
         endif
         if stridx(origPath, s:tempDir) == 0
             return
@@ -434,7 +437,7 @@ function! s:backupRemove(filePath)
     call inputsave()
     let input = input(join([
                 \   '[ZFBackup] remove all backups for file?',
-                \   '    file: ' . ZFBackup_absPath(filePath),
+                \   '    file: ' . CygpathFix_absPath(filePath),
                 \   '',
                 \   'enter `got it` to remove: ',
                 \ ], "\n"))
@@ -457,7 +460,7 @@ function! s:backupRemoveDir(dirPath)
     if empty(dirPath)
         let dirPath = getcwd()
     endif
-    let absPath = ZFBackup_absPath(dirPath)
+    let absPath = CygpathFix_absPath(dirPath)
 
     redraw!
     call inputsave()
@@ -504,7 +507,7 @@ function! s:getBackupInfoList(filePath)
         return []
     endif
 
-    let absPath = ZFBackup_absPath(filePath)
+    let absPath = CygpathFix_absPath(filePath)
     let ret = []
     for backupFile in s:getAllBackupFilePath(name)
         let backupInfo = s:backupInfoDecode(backupFile)
