@@ -85,7 +85,7 @@ if get(g:, 'ZFBackup_backupFilterEnableDefault', 1)
         let ignoreData = ZFIgnoreGet(get(g:, 'ZFIgnoreOption_ZFBackup', {
                     \   'ZFBackup' : 1,
                     \ }))
-        let items = split(CygpathFix_absPath(a:filePath, ':p'), '/')
+        let items = split(CygpathFix_absPath(a:filePath), '/')
         let fileName = items[-1]
         for p in ignoreData['file']
             let pattern = ZFIgnorePatternToRegexp(p)
