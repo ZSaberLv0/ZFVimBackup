@@ -59,8 +59,8 @@ function! ZFBackup_hashFunc_certutil(filePath)
     return tolower(substitute(ret, ' ', '', 'g'))
 endfunction
 function! ZFBackup_hashFunc_fallback(filePath)
-    " require `retorillo/md5.vim`
-    if !exists('*MD5File')
+    " require `retorillo/md5.vim`, may be very slow
+    if !exists('*MD5File') || !get(g:, 'ZFBackup_hashFunc_fallback_enable', 0)
         return ''
     endif
     return MD5File(a:filePath)
