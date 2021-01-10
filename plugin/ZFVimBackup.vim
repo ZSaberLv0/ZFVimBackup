@@ -28,7 +28,7 @@ function! ZFBackup_hashFunc(filePath)
             let s:hashFunc = function('ZFBackup_hashFunc_md5sum')
         elseif executable('md5')
             let s:hashFunc = function('ZFBackup_hashFunc_md5')
-        elseif executable('executable')
+        elseif executable('certutil')
             let s:hashFunc = function('ZFBackup_hashFunc_certutil')
         else
             let s:hashFunc = function('ZFBackup_hashFunc_fallback')
