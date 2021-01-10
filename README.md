@@ -49,6 +49,10 @@ or [buy me a coffee](https://github.com/ZSaberLv0/ZSaberLv0)
 * `g:ZFBackup_path` : path for backups, default: `~/.vim_cache`
 * `g:ZFBackup_backupFunc` : function to perform actual backup, default: `ZFBackup_backupFunc`
 * `g:ZFBackup_hashFunc` : function to get file's hash, default: `ZFBackup_hashFunc`
+    * you need one of thse command to make backup available:
+        * `md5` or `md5sum` (for Linux like systems)
+        * `certutil` (for Windows)
+    * if none of them are available, you may supply your own hash function
 * `g:ZFBackup_backupFilter` : Dictonary that contain filter functions to filter files to backup,
     key is any module name you like,
     value is filter function `function(filePath)`,
