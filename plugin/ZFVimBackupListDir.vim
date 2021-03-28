@@ -1,6 +1,16 @@
 
 command! -nargs=* -complete=dir ZFBackupListDir :call ZFBackupListDir(<q-args>)
 
+function! s:ZFBackupListDir_sortFunc(backupInfo1, backupInfo2)
+    if a:backupInfo1['origPath'] == a:backupInfo2['origPath']
+        return 0
+    elseif a:backupInfo1['origPath'] < a:backupInfo2['origPath']
+        return -1
+    else
+        return 1
+    endif
+endfunction
+
 function! ZFBackupListDir(...)
     let dirPath = get(a:, 1, '')
     if empty(dirPath)
@@ -63,7 +73,9 @@ function! ZFBackupListDir(...)
     let b:ZFBackupListDir_offset = len(contents) + 1
     let contentsTmp = []
     let maxLen = 0
-    for backupInfo in values(backupsInDir)
+    let backupInfoList = values(backupsInDir)
+    call sort(backupInfoList, function('s:ZFBackupListDir_sortFunc'))
+    for backupInfo in backupInfoList
         call add(b:ZFBackupListDir_filesToList, backupInfo['origPath'])
         let relIndex = stridx(backupInfo['origPath'], absPath)
         if relIndex == 0
