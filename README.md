@@ -84,6 +84,6 @@ or [buy me a coffee](https://github.com/ZSaberLv0/ZSaberLv0)
 * `g:ZFBackup_includeTempname` : whether backup files created by `tempname()`, default: `0`
 * `g:ZFBackup_maxFileSize` : if file large than this size, do not backup, default: `2 * 1024 * 1024` (2MB)
 * `g:ZFBackup_maxBackupPerFile` : max number of backups for one file, default: `5`
-* `g:ZFBackup_maxBackup` : max number of backups, default: `200`
+* `g:ZFBackup_maxBackup` : max number of backups, default: `500`
 * `g:ZFBackup_autoClean` : auto clean outdated backup, use 0 to disable auto clean, default: `7 * 24 * 60 * 60` (7 day)
 

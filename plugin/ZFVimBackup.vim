@@ -252,7 +252,7 @@ function! ZFBackup_autoClean()
         endfor
     endif
 
-    let maxBackup = get(g:, 'ZFBackup_maxBackup', 200)
+    let maxBackup = get(g:, 'ZFBackup_maxBackup', 500)
     if maxBackup > 0
         call sort(backupInfoList, function('s:ZFBackup_autoClean_sortFunc'))
         if maxBackup <= len(backupInfoList) - 1
