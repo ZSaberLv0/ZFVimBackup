@@ -1,10 +1,5 @@
 
 " ============================================================
-if !exists('g:ZFBackup_path')
-    let g:ZFBackup_path = ''
-endif
-
-" ============================================================
 if !exists('g:ZFBackup_backupFunc')
     let g:ZFBackup_backupFunc = 'ZFBackup_backupFunc'
 endif
@@ -13,7 +8,7 @@ function! ZFBackup_backupFunc(from, to)
     try
         " use read write instead of copy,
         " to ensure latest getftime()
-        silent! call writefile(readfile(a:from, 'b'), a:to, 'b')
+        silent! noautocmd call writefile(readfile(a:from, 'b'), a:to, 'b')
     catch
     endtry
 endfunction
@@ -59,11 +54,11 @@ function! ZFBackup_hashFunc_certutil(filePath)
     return tolower(substitute(ret, ' ', '', 'g'))
 endfunction
 function! ZFBackup_hashFunc_fallback(filePath)
-    " require `retorillo/md5.vim`, may be very slow
-    if !exists('*MD5File') || !get(g:, 'ZFBackup_hashFunc_fallback_enable', 0)
+    " may be very slow
+    if !get(g:, 'ZFBackup_hashFunc_fallback_enable', 0)
         return ''
     endif
-    return MD5File(a:filePath)
+    return ZFBackup_MD5File(a:filePath)
 endfunction
 
 " ============================================================
@@ -112,17 +107,30 @@ endif
 
 
 " ============================================================
+function! ZFBackup_stateFilePath()
+    if empty(get(s:, 'stateFilePath', ''))
+        let stateFilePath = get(g:, 'ZFBackup_stateFilePath', '')
+        if empty(stateFilePath)
+            let s:stateFilePath = ZFBackup_backupDir() . '/.ZFBackupState'
+        else
+            let s:stateFilePath = stateFilePath
+        endif
+        let s:stateFilePath = CygpathFix_absPath(s:stateFilePath)
+    endif
+    return s:stateFilePath
+endfunction
+
 function! ZFBackup_backupDir()
     if empty(get(s:, 'backupDir', ''))
-        let cacheDir = get(g:, 'ZFBackup_path', '')
-        if empty(cacheDir)
-            let cacheDir = get(g:, 'zf_vim_cache_path', '')
-            if empty(cacheDir)
-                let cacheDir = $HOME . '/.vim_cache'
+        let backupDir = get(g:, 'ZFBackup_path', '')
+        if empty(backupDir)
+            let backupDir = get(g:, 'zf_vim_cache_path', '')
+            if empty(backupDir)
+                let backupDir = $HOME . '/.vim_cache'
             endif
-            let s:backupDir = cacheDir . '/ZFBackup'
+            let s:backupDir = backupDir . '/ZFBackup'
         else
-            let s:backupDir = cacheDir
+            let s:backupDir = backupDir
         endif
         let s:backupDir = CygpathFix_absPath(s:backupDir)
     endif
@@ -192,7 +200,9 @@ command! -nargs=* -complete=file ZFBackupRemoveDir :call ZFBackupRemoveDir(<q-ar
 " return: [
 "   {
 "     'backupFile' : 'backup file name under backupDir',
-"     'origPath' : 'original file abs path',
+"     'name' : 'original file's name',
+"     'path' : 'original file's parent's abs path, may be empty when local config file messed up',
+"     'pathMD5' : 'original file's parent's abs path's MD5',
 "     'hash' : 'hash of the file',
 "     'time' : 'backup saved time, string',
 "     'info' : 'a short info to show the backup',
@@ -238,7 +248,7 @@ function! s:ZFBackup_autoClean_sortFunc(backupInfo1, backupInfo2)
         return -1
     endif
 endfunction
-function! ZFBackup_autoClean()
+function! s:ZFBackup_autoCleanAction()
     let backupDir = ZFBackup_backupDir()
     let backupInfoList = ZFBackup_getAllBackupInfoList()
 
@@ -262,69 +272,151 @@ function! ZFBackup_autoClean()
         endif
     endif
 endfunction
-augroup ZFBackup_autoClean_augroup
-    autocmd!
-    autocmd VimLeavePre call ZFBackup_autoClean()
-augroup END
+function! s:ZFBackup_autoCleanDelay(...)
+    let s:autoCleanDelayTaskId = -1
+    call s:ZFBackup_autoCleanAction()
+endfunction
+function! ZFBackup_autoClean()
+    if !has('timers')
+        call s:ZFBackup_autoCleanAction()
+        return
+    endif
+    if get(s:, 'autoCleanDelayTaskId', -1) == -1
+        let s:autoCleanDelayTaskId = timer_start(get(g:, 'ZFBackup_autoCleanDelay', 5000), function('s:ZFBackup_autoCleanDelay'))
+    endif
+endfunction
 
 " ============================================================
 function! s:pathEncode(file)
-    let ret = a:file
-    let ret = substitute(ret, ';', ';ES;', 'g')
-    let ret = substitute(ret, '[/\\]', ';PS;', 'g')
-    let ret = substitute(ret, ':', ';DS;', 'g')
-    let ret = substitute(ret, '\~', ';SS;', 'g')
-    return ret
+    return substitute(a:file, '\~', ';SS;', 'g')
 endfunction
 function! s:pathDecode(file)
-    let ret = a:file
-    let ret = substitute(ret, ';ES;', ';', 'g')
-    let ret = substitute(ret, ';PS;', '/', 'g')
-    let ret = substitute(ret, ';DS;', ':', 'g')
-    let ret = substitute(ret, ';SS;', '\~', 'g')
-    return ret
+    return substitute(a:file, ';SS;', '\~', 'g')
 endfunction
 
-" file_name_encoded~2020-01-01~23-59-59~hash~full_path_encoded
-function! s:backupInfoEncode(origPath)
+" store state in ZFBackup_stateFilePath
+"   pathMD5/s:pathEncode(name)~s:pathEncode(path)
+function! s:stateGet(pathMD5, name)
+    return get(get(s:, 'state', {}), a:pathMD5 . '/' . s:pathEncode(a:name), '')
+endfunction
+function! s:stateSet(pathMD5, name, path)
+    if !exists('s:state')
+        let s:state = {}
+    endif
+    let s:stateChanged = 1
+    let key = a:pathMD5 . '/' . s:pathEncode(a:name)
+    if empty(a:path)
+        if exists('s:state[key]')
+            unlet s:state[key]
+        endif
+    else
+        let s:state[key] = a:path
+    endif
+    if !has('timers')
+        call s:stateSave()
+        return
+    endif
+    if get(s:, 'stateSaveDelayTaskId', -1) == -1
+        let s:stateSaveDelayTaskId = timer_start(get(g:, 'ZFBackup_stateSaveDelay', 5000), function('s:stateSaveDelay'))
+    endif
+endfunction
+function! s:stateSaveDelay(...)
+    let s:stateSaveDelayTaskId = -1
+    call s:stateSave()
+endfunction
+function! s:stateSave()
+    if !get(s:, 'stateChanged', 0)
+        return
+    endif
+    let s:stateChanged = 0
+    let stateExists = {}
+    for backupFile in s:getAllBackupFilePath()
+        let backupInfo = s:backupInfoDecode(backupFile)
+        if empty(backupInfo['name'])
+            continue
+        endif
+        let key = backupInfo['pathMD5'] . '/' . s:pathEncode(backupInfo['name'])
+        if exists('s:state[key]')
+            let stateExists[key] = s:state[key]
+        endif
+    endfor
+    let s:state = stateExists
+    let contents = []
+    for key in keys(s:state)
+        call add(contents, key . '~' . s:pathEncode(s:state[key]))
+    endfor
+    let stateFilePath = fnamemodify(ZFBackup_stateFilePath(), ':h')
+    if !isdirectory(stateFilePath)
+        silent! call mkdir(stateFilePath, 'p')
+    endif
+    noautocmd call writefile(contents, ZFBackup_stateFilePath())
+endfunction
+function! s:stateLoad()
+    if !filereadable(ZFBackup_stateFilePath())
+        return
+    endif
+    let s:state = {}
+    for line in readfile(ZFBackup_stateFilePath())
+        let split = split(line, '\~')
+        if len(split) != 2
+            continue
+        endif
+        let s:state[split[0]] = s:pathDecode(split[1])
+    endfor
+endfunction
+augroup ZFBackup_stateSave_augroup
+    autocmd!
+    autocmd VimEnter * call s:stateLoad()
+    autocmd VimLeavePre * call s:stateSave()
+augroup END
+
+" file_name_encoded~pathMD5~2020-01-01~23-59-59~hash
+function! s:backupInfoEncode(path)
     if !exists('*' . g:ZFBackup_hashFunc)
         return {}
     endif
     let Fn_hashFunc = function(g:ZFBackup_hashFunc)
-    let hash = Fn_hashFunc(a:origPath)
+    let hash = Fn_hashFunc(a:path)
     if type(hash) != type('')
         let hash = string(hash)
     endif
     if hash == ''
         return {}
     endif
-    let backupFile = s:pathEncode(fnamemodify(a:origPath, ':t'))
+    let pathMD5 = ZFBackup_MD5String(CygpathFix_absPath(fnamemodify(a:path, ':p:h')))
+    let backupFile = s:pathEncode(fnamemodify(a:path, ':t'))
+                \ . '~' . pathMD5
                 \ . '~' . strftime('%Y-%m-%d~%H-%M-%S')
                 \ . '~' . s:pathEncode(hash)
-                \ . '~' . s:pathEncode(CygpathFix_absPath(a:origPath))
     return {
                 \   'backupFile' : backupFile,
+                \   'pathMD5' : pathMD5,
                 \   'hash' : hash,
                 \ }
 endfunction
 function! s:backupInfoDecode(backupFile)
     let backupFile = fnamemodify(a:backupFile, ':t')
     let items = split(backupFile, '\~')
-    if len(items) == 5
-        let time = items[1] . ' ' . substitute(items[2], '-', ':', 'g')
-        let hash = s:pathDecode(items[3])
-        let origPath = s:pathDecode(items[4])
+    if len(items) == 5 && len(items[1]) == 32
+        let name = s:pathDecode(items[0])
+        let pathMD5 = items[1]
+        let time = items[2] . ' ' . substitute(items[3], '-', ':', 'g')
+        let hash = s:pathDecode(items[4])
         return {
                     \   'backupFile' : backupFile,
-                    \   'origPath' : origPath,
+                    \   'name' : name,
+                    \   'path' : s:stateGet(pathMD5, name),
+                    \   'pathMD5' : pathMD5,
                     \   'hash' : hash,
                     \   'time' : time,
-                    \   'info' : '(' . time . ') ' . fnamemodify(origPath, ':t'),
+                    \   'info' : '(' . time . ') ' . name,
                     \ }
     endif
     return {
                 \   'backupFile' : backupFile,
-                \   'origPath' : '',
+                \   'name' : '',
+                \   'path' : '',
+                \   'pathMD5' : '',
                 \   'hash' : '',
                 \   'time' : '',
                 \   'info' : '',
@@ -359,7 +451,7 @@ function! s:backupSave(filePath, options)
         return
     endif
 
-    let origPath = CygpathFix_absPath(filePath)
+    let absPath = CygpathFix_absPath(filePath)
     let backupDir = ZFBackup_backupDir()
 
     " ignore file created by tempname()
@@ -367,7 +459,7 @@ function! s:backupSave(filePath, options)
         if !exists('s:tempDir')
             let s:tempDir = CygpathFix_absPath(fnamemodify(tempname(), ':h'))
         endif
-        if stridx(origPath, s:tempDir) == 0
+        if stridx(absPath, s:tempDir) == 0
             return
         endif
     endif
@@ -375,7 +467,7 @@ function! s:backupSave(filePath, options)
     let backupFilter = get(options, 'backupFilter', g:ZFBackup_backupFilter)
     if !empty(backupFilter)
         for Filter in values(backupFilter)
-            let filterResult = Filter(origPath)
+            let filterResult = Filter(absPath)
             if filterResult == 1
                 return
             elseif filterResult == 0
@@ -384,24 +476,26 @@ function! s:backupSave(filePath, options)
         endfor
     endif
 
-    let backupInfoNew = s:backupInfoEncode(origPath)
+    let backupInfoNew = s:backupInfoEncode(absPath)
     if empty(backupInfoNew)
         return
     endif
+    let name = fnamemodify(absPath, ':t')
 
     if !isdirectory(backupDir)
         silent! call mkdir(backupDir, 'p')
     endif
     let Fn_backupFunc = function(g:ZFBackup_backupFunc)
 
-    let backupInfoListOld = ZFBackup_getBackupInfoList(origPath)
+    let backupInfoListOld = ZFBackup_getBackupInfoList(absPath)
     if !empty(backupInfoListOld)
         for i in range(len(backupInfoListOld))
             if backupInfoListOld[i]['hash'] == backupInfoNew['hash']
                 " move to latest
                 if i != 0
                     silent! call delete(backupDir . '/' . backupInfoListOld[i]['backupFile'])
-                    call Fn_backupFunc(origPath, backupDir . '/' . backupInfoNew['backupFile'])
+                    call Fn_backupFunc(absPath, backupDir . '/' . backupInfoNew['backupFile'])
+                    call s:stateSet(backupInfoNew['pathMD5'], name, fnamemodify(absPath, ':h'))
                 endif
                 return
             endif
@@ -409,7 +503,8 @@ function! s:backupSave(filePath, options)
     endif
 
     " perform backup
-    call Fn_backupFunc(origPath, backupDir . '/' . backupInfoNew['backupFile'])
+    call Fn_backupFunc(absPath, backupDir . '/' . backupInfoNew['backupFile'])
+    call s:stateSet(backupInfoNew['pathMD5'], name, fnamemodify(absPath, ':h'))
 
     let maxBackup = get(g:, 'ZFBackup_maxBackupPerFile', 5)
     if maxBackup > 0
@@ -480,7 +575,7 @@ function! s:backupRemoveDir(dirPath)
 
     let backupDir = ZFBackup_backupDir()
     for backupInfo in ZFBackup_getAllBackupInfoList()
-        if stridx(backupInfo['origPath'], absPath) == 0
+        if stridx(backupInfo['path'], absPath) == 0
             silent! call delete(backupDir . '/' . backupInfo['backupFile'])
         endif
     endfor
@@ -509,10 +604,11 @@ function! s:getBackupInfoList(filePath)
     endif
 
     let absPath = CygpathFix_absPath(filePath)
+    let pathMD5 = ZFBackup_MD5String(CygpathFix_absPath(fnamemodify(absPath, ':h')))
     let ret = []
     for backupFile in s:getAllBackupFilePath(name)
         let backupInfo = s:backupInfoDecode(backupFile)
-        if !empty(backupInfo['origPath']) && backupInfo['origPath'] == absPath
+        if backupInfo['pathMD5'] == pathMD5
             call add(ret, backupInfo)
         endif
     endfor
@@ -523,7 +619,7 @@ function! s:getAllBackupInfoList()
     let ret = []
     for backupFile in s:getAllBackupFilePath()
         let backupInfo = s:backupInfoDecode(backupFile)
-        if !empty(backupInfo['origPath'])
+        if !empty(backupInfo['name'])
             call add(ret, backupInfo)
         endif
     endfor

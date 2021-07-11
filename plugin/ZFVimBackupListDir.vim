@@ -2,9 +2,9 @@
 command! -nargs=* -complete=dir ZFBackupListDir :call ZFBackupListDir(<q-args>)
 
 function! s:ZFBackupListDir_sortFunc(backupInfo1, backupInfo2)
-    if a:backupInfo1['origPath'] == a:backupInfo2['origPath']
+    if a:backupInfo1['pathMD5'] == a:backupInfo2['pathMD5']
         return 0
-    elseif a:backupInfo1['origPath'] < a:backupInfo2['origPath']
+    elseif a:backupInfo1['pathMD5'] < a:backupInfo2['pathMD5']
         return -1
     else
         return 1
@@ -19,8 +19,8 @@ function! ZFBackupListDir(...)
     let absPath = CygpathFix_absPath(dirPath)
     let backupsInDir = {}
     for backupInfo in ZFBackup_getAllBackupInfoList()
-        if stridx(backupInfo['origPath'], absPath) == 0
-            let backupsInDir[backupInfo['origPath']] = backupInfo
+        if stridx(backupInfo['path'], absPath) == 0
+            let backupsInDir[backupInfo['path'] . '/' . backupInfo['name']] = backupInfo
         endif
     endfor
     if empty(backupsInDir)
@@ -28,7 +28,7 @@ function! ZFBackupListDir(...)
         return
     endif
     if len(backupsInDir) == 1
-        call ZFBackupList(values(backupsInDir)[0]['origPath'])
+        call ZFBackupList(keys(backupsInDir)[0])
         return
     endif
 
@@ -76,18 +76,17 @@ function! ZFBackupListDir(...)
     let backupInfoList = values(backupsInDir)
     call sort(backupInfoList, function('s:ZFBackupListDir_sortFunc'))
     for backupInfo in backupInfoList
-        call add(b:ZFBackupListDir_filesToList, backupInfo['origPath'])
-        let relIndex = stridx(backupInfo['origPath'], absPath)
+        call add(b:ZFBackupListDir_filesToList, backupInfo['path'] . '/' . backupInfo['name'])
+        let relIndex = stridx(backupInfo['path'] . '/' . backupInfo['name'], absPath)
         if relIndex == 0
-            let pathInfo = strpart(backupInfo['origPath'], len(absPath))
+            let pathInfo = strpart(backupInfo['path'] . '/' . backupInfo['name'], len(absPath))
         else
-            let pathInfo = backupInfo['origPath']
+            let pathInfo = backupInfo['path'] . '/' . backupInfo['name']
         endif
-        let name = fnamemodify(backupInfo['origPath'], ':t')
-        if len(name) > maxLen
-            let maxLen = len(name)
+        if len(backupInfo['name']) > maxLen
+            let maxLen = len(backupInfo['name'])
         endif
-        call add(contentsTmp, [name, pathInfo])
+        call add(contentsTmp, [backupInfo['name'], pathInfo])
     endfor
     for t in contentsTmp
         call add(contents, t[0] . repeat(' ', maxLen - len(t[0])) . ' => ' . t[1])
