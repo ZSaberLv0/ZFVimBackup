@@ -101,7 +101,7 @@ function! s:backupDiff(filePath, backupInfo)
     execute 'tabedit ' . substitute(ZFBackup_backupDir() . '/' . a:backupInfo['backupFile'], ' ', '\\ ', 'g')
     diffthis
     call s:diffBufferSetup()
-    execute 'file ' . a:backupInfo['info']
+    execute 'file ' . substitute(a:backupInfo['info'], ' ', '\\ ', 'g')
     setlocal buftype=nofile bufhidden=wipe noswapfile nomodifiable
 
     vsplit
