@@ -9,6 +9,9 @@ function! ZFBackupList(...)
     if empty(filePath)
         call ZFBackupListDir(getcwd())
         return
+    elseif isdirectory(filePath)
+        call ZFBackupListDir(filePath)
+        return
     endif
     let backupInfoList = ZFBackup_getBackupInfoList(filePath)
     if empty(backupInfoList)
