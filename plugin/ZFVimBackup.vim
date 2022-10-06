@@ -506,7 +506,7 @@ function! s:backupSave(filePath, options)
     call Fn_backupFunc(absPath, backupDir . '/' . backupInfoNew['backupFile'])
     call s:stateSet(backupInfoNew['pathMD5'], name, fnamemodify(absPath, ':h'))
 
-    let maxBackup = get(g:, 'ZFBackup_maxBackupPerFile', 5)
+    let maxBackup = get(g:, 'ZFBackup_maxBackupPerFile', 10)
     if maxBackup > 0
         if maxBackup <= len(backupInfoListOld)
             for i in range(maxBackup - 1, len(backupInfoListOld) - 1)
