@@ -54,7 +54,7 @@ function! ZFBackupList(...)
     let contents = [
                 \   '# backups for file: ' . filePath,
                 \   '# ' . openHint . ' to open diff',
-                \   '# ' . reloadHint . ' or :bd to reload',
+                \   '# ' . reloadHint . ' to reload',
                 \   '# ' . quitHint . ' or :bd to quit',
                 \   '',
                 \ ]
