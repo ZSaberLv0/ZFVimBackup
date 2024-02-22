@@ -364,11 +364,6 @@ function! s:stateLoad()
         let s:state[split[0]] = s:pathDecode(split[1])
     endfor
 endfunction
-augroup ZFBackup_stateSave_augroup
-    autocmd!
-    autocmd VimEnter * call s:stateLoad()
-    autocmd VimLeavePre * call s:stateSave()
-augroup END
 
 " file_name_encoded~pathMD5~2020-01-01~23-59-59~hash
 function! s:backupInfoEncode(path)
@@ -626,4 +621,13 @@ function! s:getAllBackupInfoList()
     call sort(ret, function('s:getBackupInfoList_sortFunc'))
     return ret
 endfunction
+
+augroup ZFBackup_stateSave_augroup
+    autocmd!
+    autocmd VimEnter * call s:stateLoad()
+    autocmd VimLeavePre * call s:stateSave()
+augroup END
+if exists('v:vim_did_enter') && v:vim_did_enter
+    call s:stateLoad()
+endif
 
