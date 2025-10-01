@@ -223,7 +223,7 @@ function! ZFBackup_clean()
     endfor
 endfunction
 
-function! ZFBackup_fileSaveAction(path)
+function! ZFBackup_saveAction(path)
     let option = {}
     if !get(g:, 'ZFBackup_maxFileSizeEnableForSave', 0)
         let option['maxFileSize'] = -1
@@ -239,8 +239,8 @@ endfunction
 function! ZFBackup_enable()
     augroup ZFBackup_enable_augroup
         autocmd!
-        autocmd BufWritePre * call ZFBackup_fileSaveAction(expand('<afile>'))
-        autocmd BufWritePost * call ZFBackup_fileSaveAction(expand('<afile>'))
+        autocmd BufWritePre * call ZFBackup_saveAction(expand('<afile>'))
+        autocmd BufWritePost * call ZFBackup_saveAction(expand('<afile>'))
     augroup END
 endfunction
 function! ZFBackup_disable()
